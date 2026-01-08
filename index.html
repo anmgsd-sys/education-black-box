@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Education Black Box Pro</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .container { max-width: 850px; margin: 40px auto; }
+        .card {
+            background-color: #ffffff; padding: 40px; border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08); 
+        }
+        h1 { color: #1a237e; margin-bottom: 10px; }
+        .btn {
+            padding: 12px 25px; font-size: 16px; font-weight: 600;
+            border: none; border-radius: 8px; cursor: pointer; margin: 10px;
+            transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .btn:hover { transform: translateY(-2px); }
+        .start { background-color: #1a237e; color: white; }
+        .stop { background-color: #d32f2f; color: white; }
+        .download { background-color: #f57c00; color: white; width: 100%; margin-top: 20px;}
+        .btn:disabled { background-color: #e9ecef; color: #adb5bd; cursor: not-allowed; transform: none; box-shadow: none;}
+        
+        #audioVisualizer {
+            width: 100%; height: 150px; background-color: #f8f9fa;
+            border-radius: 10px; margin-top: 20px; border: 1px solid #e9ecef;
+        }
+        .speaker-box {
+            margin: 20px auto; padding: 15px; width: 70%;
+            background-color: #e3f2fd; color: #1565c0;
+            font-size: 18px; font-weight: bold;
+            border-radius: 10px; border: 2px solid #bbdefb;
+        }
+        .teacher-mode { background-color: #e8f5e9; color: #2e7d32; border-color: #c8e6c9; }
+        .student-mode { background-color: #fff3e0; color: #e65100; border-color: #ffe0b2; }
+
+        /* МОДАЛЬДЫ ТЕРЕЗЕ (Бетті жауып тұратын) */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 9999; /* Ең жоғары қабат */
+        }
+        .modal-content {
+            background: #ffffff; padding: 40px; border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5); width: 350px;
+        }
+        input {
+            width: 100%; padding: 12px; margin: 10px 0;
+            border-radius: 8px; border: 1px solid #ced4da;
+            font-size: 16px; box-sizing: border-box;
+        }
+        .hidden { display: none !important; }
+        .blur { filter: blur(5px); pointer-events: none; }
+        .active-container { filter: none; pointer-events: all; }
+        .info-bar { background: #e8eaf6; padding: 12px; border-radius: 8px; color: #3949ab; font-weight: bold; border-left: 5px solid #1a237e; }
+        
+        /* PDF дұрыстау */
+        #analysisResult { background-color: white; color: black; overflow: visible !important; height: auto !important; }
+    </style>
+</head>
+<body>
+
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h2>🔐 Сабақты бастау</h2>
+            <p>Деректер хаттамаға жазылады</p>
+            
+            <input type="text" id="teacherNameInput" placeholder="Мұғалімнің Аты-Жөні">
+            <input type="text" id="subjectInput" placeholder="Пән (Мысалы: Физика)">
+            <input type="text" id="gradeInput" placeholder="Сынып (Мысалы: 10 'А')">
+            
+            <button id="saveInfoBtn" class="btn start" onclick="saveData()">✅ Деректерді растау</button>
+        </div>
+    </div>
+
+    <div class="container blur" id="mainContainer">
+        <div class="card"> 
+            <h1>Education Black Box ⬛</h1>
+            
+            <div id="sessionInfo" class="info-bar">
+                👤 Мұғалім: <span id="displayTeacher">...</span> | 📚 Пән: <span id="displaySubject">...</span>
+            </div>
+
+            <div class="controls">
+                <button id="startBtn" class="btn start" onclick="startAnalysis()" disabled>🎙 Талдауды бастау</button>
+                <button id="stopBtn" class="btn stop" onclick="stopAnalysis()" disabled>🛑 Аяқтау</button>
+            </div>
+
+            <div id="speakerIndicator" class="speaker-box">🔊 Дайындық...</div>
+            <canvas id="audioVisualizer"></canvas>
+
+            <div id="reportCard" class="hidden">
+                <div id="analysisResult"></div> 
+                <button id="downloadBtn" class="btn download" onclick="downloadPDF()">📥 Хаттаманы жүктеу (PDF)</button>
+            </div>
+        </div> 
+    </div>
+    
+    <script>
+        // Глобалды айнымалылар
+        let audioContext, analyser, microphone, javascriptNode;
+        let isRecording = false;
+        let timelineData = []; 
+        let teacherName = "", subjectName = "", className = "";
+
+        // 1. ДЕРЕКТЕРДІ САҚТАУ ФУНКЦИЯСЫ
+        function saveData() {
+            // Жолақтардан мәндерді алу
+            const tInput = document.getElementById('teacherNameInput').value;
+            const sInput = document.getElementById('subjectInput').value;
+            const cInput = document.getElementById('gradeInput').value;
+
+            // Тексеру
+            if(tInput.trim() === "" || sInput.trim() === "" || cInput.trim() === "") {
+                alert("Қате: Барлық жолақтарды толтыру міндетті!");
+                return;
+            }
+
+            // Сақтау
+            teacherName = tInput;
+            subjectName = sInput;
+            className = cInput;
+
+            // Интерфейсті ашу
+            document.getElementById('displayTeacher').innerText = teacherName;
+            document.getElementById('displaySubject').innerText = `${subjectName} (${className})`;
+            
+            document.getElementById('loginModal').style.display = "none"; // Модальды жабу
+            
+            const main = document.getElementById('mainContainer');
+            main.classList.remove("blur");
+            main.style.filter = "none";
+            main.style.pointerEvents = "all";
+            
+            document.getElementById('startBtn').disabled = false;
+        }
+
+        // 2. ТАЛДАУДЫ БАСТАУ
+        async function startAnalysis() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+                javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+                analyser.fftSize = 2048; 
+
+                microphone.connect(analyser);
+                analyser.connect(javascriptNode);
+                javascriptNode.connect(audioContext.destination);
+
+                isRecording = true;
+                timelineData = []; 
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                document.getElementById('reportCard').classList.add('hidden');
+
+                const canvas = document.getElementById('audioVisualizer');
+                const ctx = canvas.getContext('2d');
+                const speakerIndicator = document.getElementById('speakerIndicator');
+
+                javascriptNode.onaudioprocess = () => {
+                    if (!isRecording) return;
+                    const array = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(array);
+
+                    let values = 0, maxIndex = 0, maxVal = 0;
+                    for (let i = 0; i < array.length; i++) {
+                        values += array[i];
+                        if(array[i] > maxVal) { maxVal = array[i]; maxIndex = i; }
+                    }
+                    const volume = values / array.length;
+                    const frequency = maxIndex * (audioContext.sampleRate / analyser.fftSize);
+
+                    let currentStatus = "silence";
+                    if (volume < 10) {
+                        currentStatus = "silence";
+                        speakerIndicator.innerText = "🤫 Үнсіздік (Жұмыс сәті)";
+                        speakerIndicator.className = "speaker-box";
+                    } else {
+                        if (frequency < 280) {
+                            currentStatus = "teacher";
+                            speakerIndicator.innerText = "👨‍🏫 Мұғалім сөйлеуде";
+                            speakerIndicator.className = "speaker-box teacher-mode";
+                        } else {
+                            currentStatus = "student";
+                            speakerIndicator.innerText = "🙋‍♂️ Оқушы жауап беруде";
+                            speakerIndicator.className = "speaker-box student-mode";
+                        }
+                    }
+                    if (Math.random() > 0.8) timelineData.push(currentStatus);
+                    
+                    // Визуализация
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    const barWidth = (canvas.width / array.length) * 2.5;
+                    let x = 0;
+                    for (let i = 0; i < array.length; i++) {
+                        let barHeight = array[i] / 2;
+                        ctx.fillStyle = `rgb(50, ${barHeight + 100}, 200)`;
+                        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                        x += barWidth + 1;
+                    }
+                };
+            } catch (err) { alert("Микрофон іске қосылмады! Браузерде рұқсат беріңіз."); }
+        }
+
+        // 3. АЯҚТАУ ЖӘНЕ ЕСЕП
+        function stopAnalysis() {
+            isRecording = false;
+            if(audioContext) audioContext.close();
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('speakerIndicator').innerText = "🛑 Талдау аяқталды";
+            generateReport();
+        }
+
+        function formatTime(seconds) {
+            seconds = Math.round(seconds);
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return m === 0 ? `${s} сек` : `${m} мин ${s} сек`;
+        }
+
+        // 4. ЕСЕП ЖӘНЕ PDF ҚҰРАСТЫРУ
+        function generateReport() {
+            document.getElementById('reportCard').classList.remove('hidden');
+
+            let t = 0, s = 0, sil = 0;
+            timelineData.forEach(d => {
+                if (d === 'teacher') t++; else if (d === 'student') s++; else sil++;
+            });
+            const factor = 0.09; 
+            const tSec = t * factor, sSec = s * factor, silSec = sil * factor;
+
+            let narrative = "";
+            const partSize = Math.floor(timelineData.length / 3);
+            const startData = timelineData.slice(0, partSize);
+            let startTeacher = startData.filter(d => d === 'teacher').length;
+            if (startTeacher > startData.length * 0.5) narrative += "<p>✅ <b>Сабақтың басы:</b> Тақырыпты түсіндіруден басталды. Ұйымдастыру кезеңі сәтті өтті.</p>";
+            else narrative += "<p>⚠️ <b>Сабақтың басы:</b> Ұйымдастыру кезеңі баяу өтті немесе бірден практика басталды.</p>";
+
+            let midData = timelineData.slice(partSize, partSize*2);
+            let midStudent = midData.filter(d => d === 'student').length;
+            if (midStudent > midData.length * 0.2) narrative += "<p>✅ <b>Негізгі бөлім:</b> Оқушылар белсенді қатысты, сұрақ-жауап әдісі қолданылды.</p>";
+            else narrative += "<p>ℹ️ <b>Негізгі бөлім:</b> Оқушылар көбіне тыңдаушы рөлінде болды немесе жазбаша жұмыс орындады.</p>";
+
+            // PDF Мазмұны
+            const resultDiv = document.getElementById('analysisResult');
+            resultDiv.innerHTML = `
+                <div style="font-family: 'Times New Roman', serif; color: #000; padding: 10px;">
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <h2 style="margin: 0; font-size: 16pt; text-transform: uppercase;">Сабақты талдау хаттамасы</h2>
+                        <p style="margin: 0; font-size: 10pt; font-style: italic;">"Education Black Box" жүйесі</p>
+                    </div>
+                    <hr style="border: 1px solid #000; margin-bottom: 15px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12pt; margin-bottom: 20px;">
+                        <tr>
+                            <td style="padding: 5px; font-weight: bold;">Күні:</td><td style="padding: 5px;">${new Date().toLocaleDateString()}</td>
+                            <td style="padding: 5px; font-weight: bold;">Мұғалім:</td><td style="padding: 5px;">${teacherName}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 5px; font-weight: bold;">Уақыты:</td><td style="padding: 5px;">${new Date().toLocaleTimeString()}</td>
+                            <td style="padding: 5px; font-weight: bold;">Пән/Сынып:</td><td style="padding: 5px;">${subjectName} (${className})</td>
+                        </tr>
+                    </table>
+                    <div style="font-size: 14pt; font-weight: bold; border-bottom: 1px solid #000; margin-bottom: 10px;">1. Статистикалық көрсеткіштер</div>
+                    <ul style="font-size: 12pt; line-height: 1.6;">
+                        <li>👨‍🏫 Мұғалімнің сөйлеу уақыты: <b>${formatTime(tSec)}</b></li>
+                        <li>🙋‍♂️ Оқушының сөйлеу уақыты: <b>${formatTime(sSec)}</b></li>
+                        <li>🤫 Үнсіздік (Жұмыс сәті): <b>${formatTime(silSec)}</b></li>
+                    </ul>
+                    <div style="font-size: 14pt; font-weight: bold; border-bottom: 1px solid #000; margin-top: 20px; margin-bottom: 10px;">2. Әдістемелік талдау</div>
+                    <div style="font-size: 12pt; text-align: justify; line-height: 1.4; text-indent: 30px;">${narrative}</div>
+                    <br><br><br>
+                    <table style="width: 100%; font-size: 12pt; margin-top: 30px;">
+                        <tr>
+                            <td style="text-align: center; width: 50%;">_______________________<br>(Мұғалімнің қолы)</td>
+                            <td style="text-align: center; width: 50%;">_______________________<br>(Әкімшілік өкілі)</td>
+                        </tr>
+                    </table>
+                </div>
+            `;
+        }
+
+        // 5. PDF ЖҮКТЕУ (Түзелген)
+        function downloadPDF() {
+            const element = document.getElementById('analysisResult');
+            const opt = {
+                margin:       [10, 10, 10, 10], 
+                filename:     `${subjectName}_${className}_Хаттама.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+            };
+            html2pdf().set(opt).from(element).save();
+        }
+    </script>
+</body>
+</html>
