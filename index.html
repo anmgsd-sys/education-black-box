@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Education Black Box Pro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1>Education Black Box ⬛</h1>
+        <p class="subtitle">AI Voice Diarization System</p>
+
+        <div class="controls">
+            <button id="startBtn" class="btn start">🎙 Талдауды бастау</button>
+            <button id="stopBtn" class="btn stop" disabled>🛑 Аяқтау</button>
+        </div>
+
+        <div id="speakerIndicator" class="speaker-box">
+            🔊 Анықталуда...
+        </div>
+
+        <canvas id="audioVisualizer"></canvas>
+
+        <div id="reportCard" class="hidden">
+            <h2>📊 Күрделі сабақ талдауы</h2>
+            <div id="analysisResult"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
